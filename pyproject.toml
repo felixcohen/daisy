@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "daisy"
+version = "0.1.0"
+description = "SVG generator for AxiDraw A3 plotter label printing"
+readme = "README.md"
+requires-python = ">=3.9"
+authors = [
+    {name = "Daisy Drinks", email = "hello@daisydrinks.com"}
+]
+dependencies = [
+    "svgwrite>=1.4.3",
+    "fonttools>=4.47.0",
+    "click>=8.1.7",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.4.3",
+    "black>=23.12.0",
+    "pylint>=3.0.3",
+]
+
+[project.scripts]
+daisy = "src.cli:main"
+
+[tool.black]
+line-length = 100
+target-version = ['py39']
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
