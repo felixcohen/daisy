@@ -18,6 +18,8 @@
 - **Label Dimensions**: 155mm × 70mm each
 - **Output Format**: SVG (Scalable Vector Graphics)
 - **Implementation**: Python CLI application
+- **House Font**: Brandon_reg.otf (Brandon Grotesque Regular)
+- **Reference**: See `Manhattans Project Blank Label.pdf` for label design example
 
 ---
 
@@ -39,9 +41,13 @@ daisy/
 │   ├── test_svg_generator.py
 │   ├── test_label_layout.py
 │   └── test_text_renderer.py
+├── fonts/                  # Font files (or keep in root)
+│   └── Brandon_reg.otf     # House font - Brandon Grotesque Regular
 ├── templates/              # SVG templates (if needed)
 ├── output/                 # Generated SVG files (gitignored)
 ├── examples/               # Example configurations and outputs
+├── Brandon_reg.otf         # House font (currently in root)
+├── Manhattans Project Blank Label.pdf  # Example label design reference
 ├── requirements.txt        # Python dependencies
 ├── setup.py               # Package installation configuration
 ├── pyproject.toml         # Modern Python project configuration
@@ -69,11 +75,16 @@ daisy/
 
 ### Key Dependencies to Consider
 - **svgwrite** or **drawSvg**: SVG generation libraries
+- **fontTools** or **freetype-py**: OTF font parsing and text-to-path conversion
 - **click** or **argparse**: CLI framework
 - **pyyaml**: Configuration file parsing (if using YAML configs)
 - **pytest**: Testing framework
 - **black**: Code formatting
 - **pylint** or **flake8**: Code linting
+
+**Critical for Text Rendering:**
+- **fontTools**: For reading OTF font files and converting text to SVG paths
+- **svgpathtools**: For path manipulation and optimization
 
 ### Testing Workflow
 - Write tests for all core functionality
@@ -176,6 +187,56 @@ For each label, the top-left corner position (x, y) can be calculated as:
 - Row 3 (labels 5, 6): y = 5.5mm + 70mm + 2mm + 70mm + 2mm = 149.5mm
 - Row 4 (labels 7, 8): y = 5.5mm + 70mm + 2mm + 70mm + 2mm + 70mm + 2mm = 221.5mm
 
+### Text Sections Within Each Label
+
+Each label contains three distinct text sections that the plotter will add to pre-printed labels. See `Manhattans Project Blank Label.pdf` for visual reference.
+
+**CRITICAL: Text must be positioned in these specific areas to avoid overlapping with pre-printed graphics**
+
+#### Section 1: Product Name
+- **Position**: Approximately 33%-50% from left edge of label
+- **Format**: Two lines of text
+- **Content**: Product/cocktail name (e.g., "ESPRESSO MARTINI")
+- **Horizontal range**: ~51mm to 77.5mm from label left edge
+- **Font**: Brandon_reg.otf
+
+#### Section 2: Product Description
+- **Position**: Approximately 75%-95% from left edge of label
+- **Format**: Single or multi-line text
+- **Content**: Product description or tasting notes
+- **Horizontal range**: ~116mm to 147mm from label left edge
+- **Font**: Brandon_reg.otf
+
+#### Section 3: ABV/Volume Information
+- **Position**: To the right of the vertical line at far right of label
+- **Format**: Typically 2-3 lines
+- **Content**:
+  - ABV percentage (e.g., "12% ABV")
+  - Total volume (e.g., "200ml")
+- **Horizontal range**: ~148mm to 155mm from label left edge (rightmost section)
+- **Font**: Brandon_reg.otf
+- **Note**: This section is after the printed vertical divider line
+
+#### Important Text Positioning Notes
+1. The pre-printed label includes the "daisy" logo on the left (~0-33%)
+2. Decorative cocktail glass illustrations occupy the center area
+3. A vertical line separates the ABV section on the far right
+4. Text must avoid these pre-printed areas
+5. All text should be converted to paths for accurate plotting
+6. Use the Brandon_reg.otf font file included in the repository
+
+#### Coordinate Reference Within Label
+For a label with top-left corner at (label_x, label_y):
+- **Section 1 (Product Name)**:
+  - x range: label_x + 51mm to label_x + 77.5mm
+  - Centered vertically or positioned as needed
+- **Section 2 (Description)**:
+  - x range: label_x + 116mm to label_x + 147mm
+  - Centered vertically or positioned as needed
+- **Section 3 (ABV/Volume)**:
+  - x range: label_x + 148mm to label_x + 155mm
+  - Positioned in top-right area
+
 ### SVG Best Practices for AxiDraw
 1. **Units**: Use millimeters for consistency with A3 specs
 2. **Paths**: Generate `<path>` elements for plotter movements
@@ -199,31 +260,61 @@ For each label, the top-left corner position (x, y) can be calculated as:
 ### Proposed Command Structure
 
 ```bash
-# Basic usage
-daisy generate --text "Hello World" --output sheet.svg
+# Basic usage - single label
+daisy generate \
+  --product-name "ESPRESSO MARTINI" \
+  --description "Rich coffee with smooth vodka" \
+  --abv "12% ABV" \
+  --volume "200ml" \
+  --labels 1 \
+  --output sheet.svg
 
-# With label positioning
-daisy generate --text "Serial: 12345" --labels 1,3,5 --output sheet.svg
+# Multiple labels with same content
+daisy generate \
+  --product-name "NEGRONI" \
+  --description "Bitter, sweet & perfectly balanced" \
+  --abv "24% ABV" \
+  --volume "200ml" \
+  --labels 1,2,3,4,5,6,7,8 \
+  --output sheet.svg
 
 # Batch generation from CSV
-daisy batch --input data.csv --output-dir ./output/
+daisy batch --input products.csv --output-dir ./output/
+
+# Example CSV format:
+# product_name,description,abv,volume,labels
+# "ESPRESSO MARTINI","Rich coffee with smooth vodka","12% ABV","200ml","1,3,5"
+# "NEGRONI","Bitter, sweet & perfectly balanced","24% ABV","200ml","2,4,6"
 
 # Preview mode (dry run)
-daisy generate --text "Test" --preview
+daisy generate \
+  --product-name "TEST PRODUCT" \
+  --description "Test description" \
+  --abv "12% ABV" \
+  --volume "200ml" \
+  --preview
 
-# Custom layout
-daisy generate --text "Custom" --layout config.yaml --output sheet.svg
+# Custom layout or font
+daisy generate \
+  --product-name "MARGARITA" \
+  --description "Tangy lime with premium tequila" \
+  --abv "18% ABV" \
+  --volume "200ml" \
+  --layout custom-layout.yaml \
+  --output sheet.svg
 ```
 
 ### Command-Line Arguments
-- `--text`: Text to add to labels (string or list)
+- `--product-name`: Product name text (displayed over 2 lines in Section 1)
+- `--description`: Product description text (Section 2)
+- `--abv`: ABV percentage (e.g., "12% ABV")
+- `--volume`: Volume information (e.g., "200ml")
 - `--labels`: Which labels to populate (1-8, comma-separated)
 - `--output`: Output SVG file path
-- `--input`: Input data file (CSV, JSON, YAML)
+- `--input`: Input data file (CSV, JSON, YAML) for batch processing
 - `--layout`: Custom layout configuration file
-- `--font`: Font family/file to use
-- `--font-size`: Text size in mm
-- `--position`: Text position within each label (center, top-left, etc.)
+- `--font`: Font file to use (defaults to Brandon_reg.otf)
+- `--font-size`: Text size in mm (optional override)
 - `--preview`: Show preview without generating file
 - `--dry-run`: Validate inputs without writing file
 
@@ -260,10 +351,24 @@ gaps:
   vertical_mm: 2     # Gap between rows
 
 text:
-  font_family: "Arial"
+  font_file: "Brandon_reg.otf"  # House font - must use this for production
+  font_family: "Brandon Grotesque Regular"
   font_size_mm: 4
   alignment: "center"
-  position: [0.5, 0.5]  # Relative position within label (0-1)
+
+  # Text sections with their specific positioning
+  sections:
+    product_name:
+      x_range: [51, 77.5]  # mm from label left edge
+      lines: 2
+      alignment: "center"
+    description:
+      x_range: [116, 147]  # mm from label left edge
+      alignment: "left"
+    abv_volume:
+      x_range: [148, 155]  # mm from label left edge
+      lines: 2-3
+      alignment: "right"
 ```
 
 **IMPORTANT**: The layout configuration above reflects the exact physical label sheet specifications. Do not modify these values unless the physical label sheets change.
@@ -504,16 +609,22 @@ Consider these features for future development:
 ## Questions to Ask the User
 
 When implementing features, clarify:
-1. **Text requirements**: Single line or multiple lines? Max characters?
-2. **Font preferences**: System font or custom font file? What size?
-3. **Data source**: CSV format? Database connection? Manual input?
-4. **Text positioning**: Where should text appear within each label (centered, top-left, etc.)?
-5. **Text margins**: Safety margins around text within each label?
-6. **Batch processing**: How many sheets typically in a batch?
-7. **Error handling**: What should happen if text is too long to fit?
+1. **Text content limits**: Maximum characters for product name, description, ABV/volume?
+2. **Data source format**: CSV structure, field names, delimiters?
+3. **Batch processing**: How many sheets typically in a batch?
+4. **Error handling**: What should happen if text is too long to fit?
+5. **Font size**: Should font size adapt to fit text, or should text be truncated?
+6. **Line breaking**: How should product names be split across two lines (word breaks, character limits)?
+7. **Vertical positioning**: Should text be vertically centered in sections or aligned to top/bottom?
 8. **Special features**: Need for QR codes, barcodes, or other graphics?
+9. **Output organization**: File naming convention for batch outputs?
+10. **Validation**: Should the tool validate against known product names or accept any input?
 
-**Note**: Label dimensions and sheet layout are fixed and should not be questioned (see Exact Label Layout Specifications section).
+**Note**: The following are fixed and should not be questioned:
+- Label dimensions and sheet layout (see Exact Label Layout Specifications)
+- Font file (Brandon_reg.otf)
+- Three text section positions (product name, description, ABV/volume)
+- Pre-printed label design with daisy logo and cocktail graphics
 
 ---
 
@@ -530,4 +641,4 @@ For AI assistants: Always prioritize:
 ---
 
 *Last Updated: 2025-11-19*
-*Project Status: Initial Setup - Exact label specifications defined*
+*Project Status: Initial Setup - Label specifications, text sections, and house font defined*
