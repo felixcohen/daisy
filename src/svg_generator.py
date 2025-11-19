@@ -94,19 +94,20 @@ class SVGGenerator:
         label_group = dwg.g(id=f"label_{label_num}")
 
         # Add product name (Section 1 - center aligned, 2 lines)
-        self._add_product_name(label_group, label_x, label_y, label_data)
+        self._add_product_name(dwg, label_group, label_x, label_y, label_data)
 
         # Add description (Section 2 - left aligned)
-        self._add_description(label_group, label_x, label_y, label_data)
+        self._add_description(dwg, label_group, label_x, label_y, label_data)
 
         # Add ABV and volume (Section 3 - right aligned, 2 lines)
-        self._add_abv_volume(label_group, label_x, label_y, label_data)
+        self._add_abv_volume(dwg, label_group, label_x, label_y, label_data)
 
         # Add the group to the drawing
         dwg.add(label_group)
 
     def _add_product_name(
         self,
+        dwg: svgwrite.Drawing,
         group: svgwrite.container.Group,
         label_x: float,
         label_y: float,
@@ -115,6 +116,7 @@ class SVGGenerator:
         """Add product name to the label (Section 1).
 
         Args:
+            dwg: SVG drawing object
             group: SVG group to add to
             label_x: Label X position
             label_y: Label Y position
@@ -146,10 +148,11 @@ class SVGGenerator:
             text_x = x_start + (width - text_width) / 2
 
             # Add text as path
-            self._add_text_as_path(group, line, text_x, line_y)
+            self._add_text_as_path(dwg, group, line, text_x, line_y)
 
     def _add_description(
         self,
+        dwg: svgwrite.Drawing,
         group: svgwrite.container.Group,
         label_x: float,
         label_y: float,
@@ -158,6 +161,7 @@ class SVGGenerator:
         """Add product description to the label (Section 2).
 
         Args:
+            dwg: SVG drawing object
             group: SVG group to add to
             label_x: Label X position
             label_y: Label Y position
@@ -173,10 +177,11 @@ class SVGGenerator:
         text_y = y_start + height
 
         # Add text as path
-        self._add_text_as_path(group, label_data.description, x_start, text_y)
+        self._add_text_as_path(dwg, group, label_data.description, x_start, text_y)
 
     def _add_abv_volume(
         self,
+        dwg: svgwrite.Drawing,
         group: svgwrite.container.Group,
         label_x: float,
         label_y: float,
@@ -185,6 +190,7 @@ class SVGGenerator:
         """Add ABV and volume to the label (Section 3).
 
         Args:
+            dwg: SVG drawing object
             group: SVG group to add to
             label_x: Label X position
             label_y: Label Y position
@@ -215,14 +221,15 @@ class SVGGenerator:
             text_x = x_start + width - text_width
 
             # Add text as path
-            self._add_text_as_path(group, line, text_x, line_y)
+            self._add_text_as_path(dwg, group, line, text_x, line_y)
 
     def _add_text_as_path(
-        self, group: svgwrite.container.Group, text: str, x: float, y: float
+        self, dwg: svgwrite.Drawing, group: svgwrite.container.Group, text: str, x: float, y: float
     ) -> None:
         """Add text as SVG path (for accurate plotting).
 
         Args:
+            dwg: SVG drawing object
             group: SVG group to add to
             text: Text to render
             x: X position
@@ -234,11 +241,10 @@ class SVGGenerator:
         # Add each glyph path to the group
         for path_data in paths:
             if path_data:
-                path_element = group.add(
-                    group.path(
-                        d=path_data,
-                        fill="none",
-                        stroke=config.SVG_STROKE_COLOR,
-                        stroke_width=config.SVG_STROKE_WIDTH,
-                    )
+                path_element = dwg.path(
+                    d=path_data,
+                    fill="none",
+                    stroke=config.SVG_STROKE_COLOR,
+                    stroke_width=config.SVG_STROKE_WIDTH,
                 )
+                group.add(path_element)
