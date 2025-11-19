@@ -6,15 +6,16 @@
 
 ### Business Context
 - The business produces printed labels
-- Labels are printed on A3 sheets (297mm × 420mm)
-- **8 labels per A3 sheet** in a grid layout
+- Labels are printed on A3 sheets in landscape orientation (420mm × 297mm)
+- **8 labels per A3 sheet** in a 2×4 grid layout
 - The AxiDraw A3 plotter is used to add variable text/data to labels after printing
 - SVG files guide the plotter's pen movements
 
 ### Technical Specifications
 - **Plotter**: AxiDraw A3 (XY pen plotter)
-- **Paper Size**: A3 (297mm × 420mm / 11.69" × 16.54")
-- **Label Layout**: 8 labels per sheet
+- **Paper Size**: A3 Landscape (420mm width × 297mm height)
+- **Label Layout**: 8 labels per sheet (2 columns × 4 rows)
+- **Label Dimensions**: 155mm × 70mm each
 - **Output Format**: SVG (Scalable Vector Graphics)
 - **Implementation**: Python CLI application
 
@@ -91,16 +92,89 @@ daisy/
 ## Key Technical Considerations
 
 ### A3 Dimensions and Coordinate System
-- **A3 Size**: 297mm × 420mm
-- **AxiDraw Coordinate System**: Typically uses millimeters or inches
-- **Origin Point**: Usually top-left corner (0,0)
-- **Label Grid**: Calculate positions for 8 labels (likely 2×4 or 4×2 grid)
+- **A3 Size (Landscape)**: 420mm width × 297mm height
+- **AxiDraw Coordinate System**: Uses millimeters
+- **Origin Point**: Top-left corner (0,0)
+- **Label Grid**: 2 columns × 4 rows = 8 labels total
 
-### Label Layout Calculations
-For 8 labels on A3, possible layouts:
-- **4 columns × 2 rows**: Each label ~74mm × 148.5mm
-- **2 columns × 4 rows**: Each label ~148.5mm × 74mm
-- Include margins/gutters between labels for cutting
+### Exact Label Layout Specifications
+
+**CRITICAL: These measurements must be used exactly as specified**
+
+#### Sheet Dimensions
+- **Width**: 420mm
+- **Height**: 297mm
+
+#### Label Dimensions
+- **Width**: 155mm
+- **Height**: 70mm
+- **Corner Radius**: 0.7mm (rounded corners)
+
+#### Grid Layout
+- **Columns (Across)**: 2
+- **Rows (Around)**: 4
+- **Total Labels**: 8
+
+#### Margins
+- **Top Margin**: 5.5mm
+- **Bottom Margin**: 5.5mm
+- **Left Margin**: 27.5mm
+- **Right Margin**: 27.5mm
+
+#### Gaps Between Labels
+- **Horizontal Gap (between columns)**: 55mm
+- **Vertical Gap (between rows)**: 2mm
+
+#### Layout Verification
+```
+Total width calculation:
+  Left margin:     27.5mm
+  Label 1:        155.0mm
+  Gap:             55.0mm
+  Label 2:        155.0mm
+  Right margin:    27.5mm
+  ─────────────────────────
+  Total:          420.0mm ✓
+
+Total height calculation:
+  Top margin:       5.5mm
+  Label row 1:     70.0mm
+  Gap:              2.0mm
+  Label row 2:     70.0mm
+  Gap:              2.0mm
+  Label row 3:     70.0mm
+  Gap:              2.0mm
+  Label row 4:     70.0mm
+  Bottom margin:    5.5mm
+  ─────────────────────────
+  Total:          297.0mm ✓
+```
+
+#### Label Numbering Convention
+Labels should be numbered 1-8 in reading order (left to right, top to bottom):
+```
+┌─────────────────────────────────────────┐
+│    [1]           [2]                    │
+│    [3]           [4]                    │
+│    [5]           [6]                    │
+│    [7]           [8]                    │
+└─────────────────────────────────────────┘
+```
+
+#### Label Position Calculations
+For each label, the top-left corner position (x, y) can be calculated as:
+
+**Column 1 (labels 1, 3, 5, 7):**
+- x = 27.5mm (left margin)
+
+**Column 2 (labels 2, 4, 6, 8):**
+- x = 27.5mm + 155mm + 55mm = 237.5mm
+
+**Row positions (for all columns):**
+- Row 1 (labels 1, 2): y = 5.5mm
+- Row 2 (labels 3, 4): y = 5.5mm + 70mm + 2mm = 77.5mm
+- Row 3 (labels 5, 6): y = 5.5mm + 70mm + 2mm + 70mm + 2mm = 149.5mm
+- Row 4 (labels 7, 8): y = 5.5mm + 70mm + 2mm + 70mm + 2mm + 70mm + 2mm = 221.5mm
 
 ### SVG Best Practices for AxiDraw
 1. **Units**: Use millimeters for consistency with A3 specs
@@ -158,20 +232,32 @@ daisy generate --text "Custom" --layout config.yaml --output sheet.svg
 ## Configuration
 
 ### Layout Configuration
-Store layout configurations in YAML or JSON:
+Store layout configurations in YAML or JSON using the exact specifications:
 
 ```yaml
-# layout.yaml
-a3:
-  width_mm: 297
-  height_mm: 420
+# layout.yaml - Default configuration matching exact specifications
+sheet:
+  width_mm: 420
+  height_mm: 297
+  orientation: "landscape"
 
 labels:
   count: 8
-  columns: 4
-  rows: 2
-  margin_mm: 5
-  gutter_mm: 3
+  columns: 2
+  rows: 4
+  width_mm: 155
+  height_mm: 70
+  corner_radius_mm: 0.7
+
+margins:
+  top_mm: 5.5
+  bottom_mm: 5.5
+  left_mm: 27.5
+  right_mm: 27.5
+
+gaps:
+  horizontal_mm: 55  # Gap between columns
+  vertical_mm: 2     # Gap between rows
 
 text:
   font_family: "Arial"
@@ -179,6 +265,8 @@ text:
   alignment: "center"
   position: [0.5, 0.5]  # Relative position within label (0-1)
 ```
+
+**IMPORTANT**: The layout configuration above reflects the exact physical label sheet specifications. Do not modify these values unless the physical label sheets change.
 
 ---
 
@@ -416,14 +504,16 @@ Consider these features for future development:
 ## Questions to Ask the User
 
 When implementing features, clarify:
-1. **Label dimensions**: Exact size of each label?
-2. **Text requirements**: Single line or multiple lines? Max characters?
-3. **Font preferences**: System font or custom font file?
-4. **Data source**: CSV format? Database connection? Manual input?
-5. **Positioning**: Where should text appear on each label?
-6. **Margins**: Safety margins around text?
-7. **Batch processing**: How many sheets typically in a batch?
-8. **Error handling**: What should happen if text is too long?
+1. **Text requirements**: Single line or multiple lines? Max characters?
+2. **Font preferences**: System font or custom font file? What size?
+3. **Data source**: CSV format? Database connection? Manual input?
+4. **Text positioning**: Where should text appear within each label (centered, top-left, etc.)?
+5. **Text margins**: Safety margins around text within each label?
+6. **Batch processing**: How many sheets typically in a batch?
+7. **Error handling**: What should happen if text is too long to fit?
+8. **Special features**: Need for QR codes, barcodes, or other graphics?
+
+**Note**: Label dimensions and sheet layout are fixed and should not be questioned (see Exact Label Layout Specifications section).
 
 ---
 
@@ -440,4 +530,4 @@ For AI assistants: Always prioritize:
 ---
 
 *Last Updated: 2025-11-19*
-*Project Status: Initial Setup*
+*Project Status: Initial Setup - Exact label specifications defined*
