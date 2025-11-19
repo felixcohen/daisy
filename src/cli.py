@@ -167,7 +167,12 @@ def cli():
     is_flag=True,
     help="Preview mode: validate inputs without generating file",
 )
-def generate(product_name, description, abv, volume, output, font_size, preview):
+@click.option(
+    "--debug",
+    is_flag=True,
+    help="Debug mode: add visual guides showing label and section boundaries",
+)
+def generate(product_name, description, abv, volume, output, font_size, preview, debug):
     """Generate SVG file with 8 identical labels."""
 
     try:
@@ -220,12 +225,14 @@ def generate(product_name, description, abv, volume, output, font_size, preview)
         )
 
         # Generate SVG
-        generator = SVGGenerator(font_path, font_size)
+        generator = SVGGenerator(font_path, font_size, debug=debug)
         generator.generate_sheet(label_data, output)
 
         click.echo(f"✓ SVG generated successfully: {output}")
         click.echo(f"  Sheet size: {config.SHEET_WIDTH_MM}mm × {config.SHEET_HEIGHT_MM}mm")
         click.echo(f"  Labels: 8 (all identical)")
+        if debug:
+            click.echo(f"  Debug mode: Visual guides included")
 
     except ValidationError as e:
         click.echo(f"\n✗ Validation Error: {e}", err=True)

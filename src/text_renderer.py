@@ -1,7 +1,7 @@
 """Text rendering and font handling for SVG path generation."""
 
 import os
-from typing import List, Tuple
+from typing import List, Tuple, Dict
 from fontTools.ttLib import TTFont
 from fontTools.pens.svgPathPen import SVGPathPen
 from src import config
@@ -76,8 +76,8 @@ class TextRenderer:
         """
         return (self.ascent - self.descent) * self.scale
 
-    def text_to_path(self, text: str, x: float, y: float) -> List[str]:
-        """Convert text to SVG path data.
+    def text_to_path(self, text: str, x: float, y: float) -> List[Dict[str, str]]:
+        """Convert text to SVG path data with transforms.
 
         Args:
             text: Text string to convert
@@ -85,7 +85,7 @@ class TextRenderer:
             y: Y position in millimeters (baseline)
 
         Returns:
-            List of SVG path strings
+            List of dicts with 'd' (path data) and 'transform' keys
         """
         paths = []
         current_x = x
@@ -105,40 +105,20 @@ class TextRenderer:
                     path_data = pen.getCommands()
 
                     if path_data:
-                        # Transform the path: scale and translate
-                        # SVG coordinate system: y increases downward
-                        # Font coordinate system: y increases upward
-                        transformed_path = self._transform_path(path_data, current_x, y)
-                        paths.append(transformed_path)
+                        # Create transform: translate to position, scale, and flip Y
+                        # Font coordinate system has Y increasing upward
+                        # SVG has Y increasing downward
+                        transform = f"translate({current_x}, {y}) scale({self.scale}, {-self.scale})"
+
+                        paths.append({
+                            'd': path_data,
+                            'transform': transform
+                        })
 
                     # Advance x position
                     current_x += glyph.width * self.scale
 
         return paths
-
-    def _transform_path(self, path_data: str, x: float, y: float) -> str:
-        """Transform font path to SVG coordinates.
-
-        Args:
-            path_data: SVG path commands from font
-            x: X translation in mm
-            y: Y translation in mm (baseline)
-
-        Returns:
-            Transformed SVG path string
-        """
-        # Parse and transform path commands
-        # The font coordinates need to be scaled and translated
-        # Font Y coordinates are flipped relative to SVG
-
-        if not path_data:
-            return ""
-
-        # Create transform string
-        # Scale, flip Y, then translate
-        transform = f"translate({x}, {y}) scale({self.scale}, {-self.scale})"
-
-        return path_data  # Will apply transform in SVG
 
     def render_multiline_text(
         self, lines: List[str], x: float, y: float, line_spacing: float = 1.2

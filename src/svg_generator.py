@@ -37,15 +37,22 @@ class LabelData:
 class SVGGenerator:
     """Generates SVG files for AxiDraw plotter."""
 
-    def __init__(self, font_path: str, font_size_mm: float = config.DEFAULT_FONT_SIZE_MM):
+    def __init__(
+        self,
+        font_path: str,
+        font_size_mm: float = config.DEFAULT_FONT_SIZE_MM,
+        debug: bool = False
+    ):
         """Initialize the SVG generator.
 
         Args:
             font_path: Path to the font file
             font_size_mm: Font size in millimeters
+            debug: If True, add visual guides for label boundaries
         """
         self.font_path = font_path
         self.font_size_mm = font_size_mm
+        self.debug = debug
         self.text_renderer = TextRenderer(font_path, font_size_mm)
         self.layout = LabelLayout()
 
@@ -62,6 +69,17 @@ class SVGGenerator:
             size=(f"{config.SHEET_WIDTH_MM}mm", f"{config.SHEET_HEIGHT_MM}mm"),
             viewBox=f"0 0 {config.SHEET_WIDTH_MM} {config.SHEET_HEIGHT_MM}",
         )
+
+        # Add debug sheet boundary if debug mode
+        if self.debug:
+            sheet_rect = dwg.rect(
+                insert=(0, 0),
+                size=(config.SHEET_WIDTH_MM, config.SHEET_HEIGHT_MM),
+                fill="none",
+                stroke="red",
+                stroke_width=0.2,
+            )
+            dwg.add(sheet_rect)
 
         # Get all label positions
         label_positions = self.layout.get_all_label_positions()
@@ -92,6 +110,19 @@ class SVGGenerator:
         """
         # Create a group for this label
         label_group = dwg.g(id=f"label_{label_num}")
+
+        # Add debug label boundary if debug mode
+        if self.debug:
+            label_rect = dwg.rect(
+                insert=(label_x, label_y),
+                size=(config.LABEL_WIDTH_MM, config.LABEL_HEIGHT_MM),
+                rx=config.LABEL_CORNER_RADIUS_MM,
+                ry=config.LABEL_CORNER_RADIUS_MM,
+                fill="none",
+                stroke="blue",
+                stroke_width=0.2,
+            )
+            label_group.add(label_rect)
 
         # Add product name (Section 1 - center aligned, 2 lines)
         self._add_product_name(dwg, label_group, label_x, label_y, label_data)
@@ -127,18 +158,29 @@ class SVGGenerator:
             label_x, label_y, "product_name"
         )
 
+        # Add debug section boundary
+        if self.debug:
+            section_rect = dwg.rect(
+                insert=(x_start, y_start),
+                size=(width, height),
+                fill="none",
+                stroke="green",
+                stroke_width=0.1,
+                opacity=0.5,
+            )
+            group.add(section_rect)
+
         # Render two lines
         lines = [label_data.product_name_line1, label_data.product_name_line2]
 
-        # Calculate line height and total text block height
+        # Calculate line height and positioning
         line_height = self.text_renderer.get_text_height() * 1.2
-        total_height = line_height * 2
 
         # Start from bottom (bottom-aligned)
         baseline_y = y_start + height
 
-        # Position each line
-        for i, line in enumerate(reversed(lines)):  # Reverse to start from bottom
+        # Position each line (in reverse to place from bottom)
+        for i, line in enumerate(reversed(lines)):
             line_y = baseline_y - (i * line_height)
 
             # Get text width for centering
@@ -172,7 +214,18 @@ class SVGGenerator:
             label_x, label_y, "description"
         )
 
-        # For now, render as single line (can add line wrapping later if needed)
+        # Add debug section boundary
+        if self.debug:
+            section_rect = dwg.rect(
+                insert=(x_start, y_start),
+                size=(width, height),
+                fill="none",
+                stroke="purple",
+                stroke_width=0.1,
+                opacity=0.5,
+            )
+            group.add(section_rect)
+
         # Bottom-aligned, left-aligned
         text_y = y_start + height
 
@@ -201,6 +254,18 @@ class SVGGenerator:
             label_x, label_y, "abv_volume"
         )
 
+        # Add debug section boundary
+        if self.debug:
+            section_rect = dwg.rect(
+                insert=(x_start, y_start),
+                size=(width, height),
+                fill="none",
+                stroke="orange",
+                stroke_width=0.1,
+                opacity=0.5,
+            )
+            group.add(section_rect)
+
         # Render two lines (ABV and Volume)
         lines = [label_data.abv, label_data.volume]
 
@@ -210,8 +275,8 @@ class SVGGenerator:
         # Start from bottom (bottom-aligned)
         baseline_y = y_start + height
 
-        # Position each line (right-aligned)
-        for i, line in enumerate(reversed(lines)):  # Reverse to start from bottom
+        # Position each line (right-aligned, from bottom)
+        for i, line in enumerate(reversed(lines)):
             line_y = baseline_y - (i * line_height)
 
             # Get text width for right alignment
@@ -236,15 +301,16 @@ class SVGGenerator:
             y: Y position (baseline)
         """
         # Get SVG path data for the text
-        paths = self.text_renderer.text_to_path(text, x, y)
+        path_dicts = self.text_renderer.text_to_path(text, x, y)
 
         # Add each glyph path to the group
-        for path_data in paths:
-            if path_data:
+        for path_dict in path_dicts:
+            if path_dict and path_dict.get('d'):
                 path_element = dwg.path(
-                    d=path_data,
+                    d=path_dict['d'],
                     fill="none",
                     stroke=config.SVG_STROKE_COLOR,
                     stroke_width=config.SVG_STROKE_WIDTH,
+                    transform=path_dict.get('transform', '')
                 )
                 group.add(path_element)
