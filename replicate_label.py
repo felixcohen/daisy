@@ -9,6 +9,7 @@ on an A3 sheet according to the Daisy label specifications.
 import sys
 import os
 import xml.etree.ElementTree as ET
+import svgwrite
 from src import config
 
 
@@ -22,93 +23,155 @@ def replicate_label(input_svg_path: str, output_svg_path: str) -> None:
     if not os.path.exists(input_svg_path):
         raise FileNotFoundError(f"Input SVG not found: {input_svg_path}")
 
-    # Parse the input SVG
+    # Parse the input SVG to extract content
     tree = ET.parse(input_svg_path)
     root = tree.getroot()
 
-    # Create new A3 SVG document
-    # Register the SVG namespace (this will add xmlns automatically)
-    ET.register_namespace('', 'http://www.w3.org/2000/svg')
+    # Extract viewBox and dimensions from input
+    input_viewbox = root.get('viewBox', '0 0 100 100')
+    viewbox_parts = input_viewbox.split()
+    if len(viewbox_parts) == 4:
+        input_width = float(viewbox_parts[2])
+        input_height = float(viewbox_parts[3])
+    else:
+        # Fallback to width/height attributes
+        input_width = float(root.get('width', '100').replace('px', ''))
+        input_height = float(root.get('height', '100').replace('px', ''))
 
-    # Create root SVG element for A3 sheet
-    # Don't include xmlns in attributes since register_namespace handles it
-    a3_svg = ET.Element(
-        '{http://www.w3.org/2000/svg}svg',
-        {
-            'width': f'{config.SHEET_WIDTH_MM}mm',
-            'height': f'{config.SHEET_HEIGHT_MM}mm',
-            'viewBox': f'0 0 {config.SHEET_WIDTH_MM} {config.SHEET_HEIGHT_MM}',
-        }
+    # Create new A3 SVG using svgwrite
+    dwg = svgwrite.Drawing(
+        output_svg_path,
+        size=(f'{config.SHEET_WIDTH_MM}mm', f'{config.SHEET_HEIGHT_MM}mm'),
+        viewBox=f'0 0 {config.SHEET_WIDTH_MM} {config.SHEET_HEIGHT_MM}',
+        profile='tiny',  # Disable strict validation
+        debug=False
     )
 
     # Get all label positions
     label_positions = [config.get_label_position(i) for i in range(1, 9)]
 
-    # Create a group for each label
+    # Calculate scale factor to fit label into 155mm x 70mm
+    # We want the input SVG to fit within the label dimensions
+    scale_x = config.LABEL_WIDTH_MM / input_width
+    scale_y = config.LABEL_HEIGHT_MM / input_height
+    # Use the smaller scale to ensure it fits
+    scale = min(scale_x, scale_y)
+
+    # Create 8 copies of the label
     for label_num, (label_x, label_y) in enumerate(label_positions, start=1):
         # Create a group for this label
-        label_group = ET.SubElement(
-            a3_svg,
-            '{http://www.w3.org/2000/svg}g',
-            {
-                'id': f'label_{label_num}',
-                'transform': f'translate({label_x}, {label_y})',
-            }
-        )
+        label_group = dwg.g(id=f'label_{label_num}')
 
-        # Clone all elements from the input SVG into this group
-        for child in root:
-            # Skip metadata, defs that aren't needed
-            tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
-            if tag_name in ('metadata', 'sodipodi:namedview', 'defs', 'title', 'desc'):
-                continue
+        # Apply transform to position and scale the label
+        transform = f'translate({label_x}, {label_y}) scale({scale})'
+        label_group['transform'] = transform
 
-            # Clone the element (without SVG root attributes)
-            cloned = _clone_element_clean(child)
-            if cloned is not None:
-                label_group.append(cloned)
+        # Extract and add all paths and shapes from the input SVG
+        _add_svg_content(root, label_group, dwg)
 
-    # Write the output SVG
-    output_tree = ET.ElementTree(a3_svg)
-    output_tree.write(output_svg_path, encoding='utf-8', xml_declaration=True)
+        # Add the group to the drawing
+        dwg.add(label_group)
+
+    # Save the SVG
+    dwg.save()
 
     print(f"✓ Created {output_svg_path}")
     print(f"  Sheet: {config.SHEET_WIDTH_MM}mm × {config.SHEET_HEIGHT_MM}mm")
     print(f"  Labels: 8 (2 columns × 4 rows)")
     print(f"  Label size: {config.LABEL_WIDTH_MM}mm × {config.LABEL_HEIGHT_MM}mm")
+    print(f"  Input size: {input_width} × {input_height}")
+    print(f"  Scale factor: {scale:.4f}")
 
 
-def _clone_element_clean(element):
-    """Recursively clone an XML element and its children, filtering out SVG root attributes.
+def _add_svg_content(element, group, dwg):
+    """Recursively add SVG content from ElementTree to svgwrite group.
 
     Args:
-        element: XML element to clone
-
-    Returns:
-        Cloned element
+        element: ElementTree element to extract content from
+        group: svgwrite group to add content to
+        dwg: svgwrite Drawing object
     """
-    # Create new element with same tag
-    # Filter out xmlns and other namespace declarations from attributes
-    clean_attribs = {}
-    for key, value in element.attrib.items():
-        # Skip xmlns attributes and other namespace declarations
-        if key.startswith('{') or key == 'xmlns' or key.startswith('xmlns:'):
-            continue
-        clean_attribs[key] = value
+    # Get the tag name without namespace
+    tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
 
-    cloned = ET.Element(element.tag, clean_attribs)
+    # Skip SVG root and metadata elements
+    if tag in ('svg', 'metadata', 'title', 'desc', 'defs'):
+        # But process children of svg and defs
+        if tag in ('svg', 'defs'):
+            for child in element:
+                _add_svg_content(child, group, dwg)
+        return
 
-    # Copy text and tail
-    cloned.text = element.text
-    cloned.tail = element.tail
+    # Handle groups
+    if tag == 'g':
+        # Create a nested group
+        sub_group = dwg.g()
+        # Copy attributes (filter out empty values)
+        for key, value in element.attrib.items():
+            attr_name = key.split('}')[-1] if '}' in key else key
+            if attr_name not in ('xmlns', 'xmlns:xlink') and not key.startswith('{') and value:
+                sub_group[attr_name] = value
+        # Process children
+        for child in element:
+            _add_svg_content(child, sub_group, dwg)
+        group.add(sub_group)
+        return
 
-    # Recursively clone children
+    # Handle paths
+    if tag == 'path':
+        # Only add paths with valid 'd' attribute
+        d_attr = element.get('d', '').strip()
+        if d_attr:  # Only add if d attribute has content after stripping
+            # Create path with 'd' attribute
+            path_elem = dwg.path(d=d_attr)
+            # Copy other attributes
+            for key, value in element.attrib.items():
+                attr_name = key.split('}')[-1] if '}' in key else key
+                # Skip 'd' (already set), xmlns, and empty values
+                if attr_name == 'd':
+                    continue
+                value_stripped = value.strip() if isinstance(value, str) else value
+                if attr_name not in ('xmlns', 'xmlns:xlink') and not key.startswith('{') and value_stripped:
+                    path_elem[attr_name] = value
+            group.add(path_elem)
+        return
+
+    # Handle other shapes (rect, circle, ellipse, line, polyline, polygon)
+    if tag in ('rect', 'circle', 'ellipse', 'line', 'polyline', 'polygon', 'text'):
+        # Create the appropriate element
+        if tag == 'rect':
+            elem = dwg.rect(insert=(0, 0), size=(0, 0))
+        elif tag == 'circle':
+            elem = dwg.circle(center=(0, 0), r=0)
+        elif tag == 'ellipse':
+            elem = dwg.ellipse(center=(0, 0), r=(0, 0))
+        elif tag == 'line':
+            elem = dwg.line(start=(0, 0), end=(0, 0))
+        elif tag == 'polyline':
+            elem = dwg.polyline(points=[])
+        elif tag == 'polygon':
+            elem = dwg.polygon(points=[])
+        elif tag == 'text':
+            elem = dwg.text('', insert=(0, 0))
+        else:
+            return
+
+        # Copy all attributes (filter out empty values)
+        for key, value in element.attrib.items():
+            attr_name = key.split('}')[-1] if '}' in key else key
+            if attr_name not in ('xmlns', 'xmlns:xlink') and not key.startswith('{') and value:
+                elem[attr_name] = value
+
+        # For text elements, also copy the text content
+        if tag == 'text' and element.text:
+            elem.text = element.text
+
+        group.add(elem)
+        return
+
+    # For any other elements, recursively process children
     for child in element:
-        cloned_child = _clone_element_clean(child)
-        if cloned_child is not None:
-            cloned.append(cloned_child)
-
-    return cloned
+        _add_svg_content(child, group, dwg)
 
 
 def main():
