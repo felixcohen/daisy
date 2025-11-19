@@ -27,18 +27,17 @@ def replicate_label(input_svg_path: str, output_svg_path: str) -> None:
     root = tree.getroot()
 
     # Create new A3 SVG document
-    # SVG namespace
-    ns = {'svg': 'http://www.w3.org/2000/svg'}
+    # Register the SVG namespace (this will add xmlns automatically)
     ET.register_namespace('', 'http://www.w3.org/2000/svg')
 
     # Create root SVG element for A3 sheet
+    # Don't include xmlns in attributes since register_namespace handles it
     a3_svg = ET.Element(
         '{http://www.w3.org/2000/svg}svg',
         {
             'width': f'{config.SHEET_WIDTH_MM}mm',
             'height': f'{config.SHEET_HEIGHT_MM}mm',
             'viewBox': f'0 0 {config.SHEET_WIDTH_MM} {config.SHEET_HEIGHT_MM}',
-            'xmlns': 'http://www.w3.org/2000/svg',
         }
     )
 
@@ -60,11 +59,12 @@ def replicate_label(input_svg_path: str, output_svg_path: str) -> None:
         # Clone all elements from the input SVG into this group
         for child in root:
             # Skip metadata, defs that aren't needed
-            if child.tag.endswith(('metadata', 'sodipodi:namedview')):
+            tag_name = child.tag.split('}')[-1] if '}' in child.tag else child.tag
+            if tag_name in ('metadata', 'sodipodi:namedview', 'defs', 'title', 'desc'):
                 continue
 
-            # Clone the element
-            cloned = _clone_element(child)
+            # Clone the element (without SVG root attributes)
+            cloned = _clone_element_clean(child)
             if cloned is not None:
                 label_group.append(cloned)
 
@@ -78,8 +78,8 @@ def replicate_label(input_svg_path: str, output_svg_path: str) -> None:
     print(f"  Label size: {config.LABEL_WIDTH_MM}mm × {config.LABEL_HEIGHT_MM}mm")
 
 
-def _clone_element(element):
-    """Recursively clone an XML element and its children.
+def _clone_element_clean(element):
+    """Recursively clone an XML element and its children, filtering out SVG root attributes.
 
     Args:
         element: XML element to clone
@@ -87,8 +87,16 @@ def _clone_element(element):
     Returns:
         Cloned element
     """
-    # Create new element with same tag and attributes
-    cloned = ET.Element(element.tag, element.attrib.copy())
+    # Create new element with same tag
+    # Filter out xmlns and other namespace declarations from attributes
+    clean_attribs = {}
+    for key, value in element.attrib.items():
+        # Skip xmlns attributes and other namespace declarations
+        if key.startswith('{') or key == 'xmlns' or key.startswith('xmlns:'):
+            continue
+        clean_attribs[key] = value
+
+    cloned = ET.Element(element.tag, clean_attribs)
 
     # Copy text and tail
     cloned.text = element.text
@@ -96,7 +104,7 @@ def _clone_element(element):
 
     # Recursively clone children
     for child in element:
-        cloned_child = _clone_element(child)
+        cloned_child = _clone_element_clean(child)
         if cloned_child is not None:
             cloned.append(cloned_child)
 
