@@ -257,66 +257,99 @@ For a label with top-left corner at (label_x, label_y):
 
 ## CLI Design
 
-### Proposed Command Structure
+### Command Structure
+
+**IMPORTANT**: The tool generates SVG files with all 8 labels populated with the same content. No CSV batch processing - all inputs are provided via command line arguments.
 
 ```bash
-# Basic usage - single label
+# Basic usage - generates all 8 labels with same content
 daisy generate \
-  --product-name "ESPRESSO MARTINI" \
+  --product-name "ESPRESSO|MARTINI" \
   --description "Rich coffee with smooth vodka" \
-  --abv "12% ABV" \
-  --volume "200ml" \
-  --labels 1 \
-  --output sheet.svg
+  --abv "12%" \
+  --volume "200ml"
 
-# Multiple labels with same content
+# The output file is automatically named based on product name
+# Output: espresso-martini.svg
+
+# With custom font size
 daisy generate \
-  --product-name "NEGRONI" \
+  --product-name "NEGRONI|CLASSIC" \
   --description "Bitter, sweet & perfectly balanced" \
-  --abv "24% ABV" \
+  --abv "24%" \
   --volume "200ml" \
-  --labels 1,2,3,4,5,6,7,8 \
-  --output sheet.svg
+  --font-size 3.5
 
-# Batch generation from CSV
-daisy batch --input products.csv --output-dir ./output/
-
-# Example CSV format:
-# product_name,description,abv,volume,labels
-# "ESPRESSO MARTINI","Rich coffee with smooth vodka","12% ABV","200ml","1,3,5"
-# "NEGRONI","Bitter, sweet & perfectly balanced","24% ABV","200ml","2,4,6"
-
-# Preview mode (dry run)
+# With custom output location
 daisy generate \
-  --product-name "TEST PRODUCT" \
+  --product-name "MARGARITA|FRESH" \
+  --description "Tangy lime with premium tequila" \
+  --abv "18%" \
+  --volume "200ml" \
+  --output /path/to/margarita-fresh.svg
+
+# Preview mode (dry run) - validates without generating file
+daisy generate \
+  --product-name "TEST|PRODUCT" \
   --description "Test description" \
-  --abv "12% ABV" \
+  --abv "12%" \
   --volume "200ml" \
   --preview
+```
 
-# Custom layout or font
-daisy generate \
-  --product-name "MARGARITA" \
-  --description "Tangy lime with premium tequila" \
-  --abv "18% ABV" \
-  --volume "200ml" \
-  --layout custom-layout.yaml \
-  --output sheet.svg
+**Product Name Line Breaking**: Use pipe character `|` to manually specify where to split the product name across two lines. For example, `"ESPRESSO|MARTINI"` will render as:
+```
+ESPRESSO
+MARTINI
 ```
 
 ### Command-Line Arguments
-- `--product-name`: Product name text (displayed over 2 lines in Section 1)
-- `--description`: Product description text (Section 2)
-- `--abv`: ABV percentage (e.g., "12% ABV")
-- `--volume`: Volume information (e.g., "200ml")
-- `--labels`: Which labels to populate (1-8, comma-separated)
-- `--output`: Output SVG file path
-- `--input`: Input data file (CSV, JSON, YAML) for batch processing
-- `--layout`: Custom layout configuration file
-- `--font`: Font file to use (defaults to Brandon_reg.otf)
-- `--font-size`: Text size in mm (optional override)
-- `--preview`: Show preview without generating file
-- `--dry-run`: Validate inputs without writing file
+
+**Required:**
+- `--product-name`: Product name with pipe `|` separator for 2-line split (max 40 chars total)
+- `--description`: Product description text (max 160 chars)
+- `--abv`: ABV percentage (4-6 chars, e.g., "12%" or "12.5%")
+- `--volume`: Volume information (4-6 chars, e.g., "200ml")
+
+**Optional:**
+- `--output`: Custom output SVG file path (defaults to auto-generated from product name)
+- `--font-size`: Text size in mm (optional override, default: 4mm)
+- `--preview`: Show preview/validation without generating file (dry run)
+
+**Not Implemented:**
+- No `--labels` argument - always generates all 8 labels with same content
+- No batch processing from CSV - use shell scripts to call tool multiple times if needed
+
+### Input Validation & Error Handling
+
+**Text Length Validation:**
+- Product name: Maximum 40 characters (including pipe separator)
+- Product description: Maximum 160 characters
+- ABV: 4-6 characters
+- Volume: 4-6 characters
+
+**Error Behavior:**
+If any text exceeds its maximum length, the tool must:
+1. Display a clear error message indicating which field exceeded the limit
+2. Show the actual character count vs. the maximum allowed
+3. Request the user to provide updated text
+4. Exit with non-zero status code
+
+**Line Breaking:**
+- Product names must include a pipe `|` character to manually specify line break
+- Example: `"ESPRESSO|MARTINI"` renders as two lines
+- The tool should validate that the pipe character is present
+
+**Vertical Alignment:**
+- All text sections should be aligned to the bottom of their respective areas
+
+**Output File Naming:**
+- Automatically generate filename from product name (e.g., "ESPRESSO|MARTINI" → "espresso-martini.svg")
+- Convert to lowercase, replace pipe and spaces with hyphens
+- User can override with `--output` argument
+
+**No Product Validation:**
+- Accept any text input - no validation against known product list
 
 ---
 
@@ -606,24 +639,30 @@ Consider these features for future development:
 
 ---
 
-## Questions to Ask the User
+## Implementation Requirements (User Confirmed)
 
-When implementing features, clarify:
-1. **Text content limits**: Maximum characters for product name, description, ABV/volume?
-2. **Data source format**: CSV structure, field names, delimiters?
-3. **Batch processing**: How many sheets typically in a batch?
-4. **Error handling**: What should happen if text is too long to fit?
-5. **Font size**: Should font size adapt to fit text, or should text be truncated?
-6. **Line breaking**: How should product names be split across two lines (word breaks, character limits)?
-7. **Vertical positioning**: Should text be vertically centered in sections or aligned to top/bottom?
-8. **Special features**: Need for QR codes, barcodes, or other graphics?
-9. **Output organization**: File naming convention for batch outputs?
-10. **Validation**: Should the tool validate against known product names or accept any input?
+The following requirements have been confirmed by the user and must be implemented exactly as specified:
 
-**Note**: The following are fixed and should not be questioned:
+**Text Limits:**
+- Product name: 40 characters maximum (including pipe separator)
+- Product description: 160 characters maximum
+- ABV: 4-6 characters
+- Volume: 4-6 characters
+
+**Behavior:**
+- Line breaking: Manual split using pipe `|` character (e.g., "ESPRESSO|MARTINI")
+- Font size: Configurable via `--font-size` argument (default: 4mm)
+- Vertical alignment: All text aligned to bottom of sections
+- Error handling: Display error and request updated text if limits exceeded
+- Input validation: Accept any text input (no product name validation)
+- Output naming: Auto-generate from product name (lowercase, hyphens), or use `--output`
+- Label population: Always generate all 8 labels with same content (no selective labeling)
+- Data input: Command-line arguments only (no CSV batch processing)
+
+**Fixed Elements (Do Not Question):**
 - Label dimensions and sheet layout (see Exact Label Layout Specifications)
-- Font file (Brandon_reg.otf)
-- Three text section positions (product name, description, ABV/volume)
+- Font file: Brandon_reg.otf (Brandon Grotesque Regular)
+- Three text section positions: product name (51-77.5mm), description (116-147mm), ABV/volume (148-155mm)
 - Pre-printed label design with daisy logo and cocktail graphics
 
 ---
@@ -641,4 +680,4 @@ For AI assistants: Always prioritize:
 ---
 
 *Last Updated: 2025-11-19*
-*Project Status: Initial Setup - Label specifications, text sections, and house font defined*
+*Project Status: Requirements Finalized - Ready for implementation*
