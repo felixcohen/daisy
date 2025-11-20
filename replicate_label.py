@@ -62,12 +62,9 @@ def replicate_label(input_svg_path: str, output_svg_path: str) -> None:
         # Create a group for this label
         label_group = dwg.g(id=f'label_{label_num}')
 
-        # Apply transform to position and scale the label
-        transform = f'translate({label_x}, {label_y}) scale({scale})'
-        label_group['transform'] = transform
-
         # Extract and add all paths and shapes from the input SVG
-        _add_svg_content(root, label_group, dwg)
+        # Pass transformation parameters to apply directly to coordinates
+        _add_svg_content(root, label_group, dwg, scale, label_x, label_y)
 
         # Add the group to the drawing
         dwg.add(label_group)
@@ -83,13 +80,135 @@ def replicate_label(input_svg_path: str, output_svg_path: str) -> None:
     print(f"  Scale factor: {scale:.4f}")
 
 
-def _add_svg_content(element, group, dwg):
+def _transform_path_data(path_data: str, scale: float, offset_x: float, offset_y: float) -> str:
+    """Transform SVG path data by applying scale and offset to coordinates.
+
+    Args:
+        path_data: SVG path 'd' attribute string
+        scale: Scale factor to apply
+        offset_x: X offset to add after scaling
+        offset_y: Y offset to add after scaling
+
+    Returns:
+        Transformed path data string
+    """
+    import re
+
+    # Pattern to match numbers (including negative and decimals)
+    number_pattern = r'-?\d+\.?\d*'
+
+    # Split path into commands and coordinates
+    # Commands are letters, coordinates are numbers
+    tokens = re.findall(r'[a-zA-Z]|' + number_pattern, path_data)
+
+    result = []
+    i = 0
+    current_command = None
+
+    while i < len(tokens):
+        token = tokens[i]
+
+        # Check if it's a command (letter)
+        if token.isalpha():
+            current_command = token
+            result.append(token)
+            i += 1
+        else:
+            # It's a number - part of coordinates
+            # We need to know which command to determine how to handle coordinates
+            if current_command is None:
+                result.append(token)
+                i += 1
+                continue
+
+            # For absolute commands (uppercase), transform coordinates
+            # For relative commands (lowercase), only scale (no offset)
+            is_absolute = current_command.isupper()
+
+            # Commands that take x,y pairs
+            if current_command.upper() in ('M', 'L', 'T'):
+                # Single x,y pair
+                if i + 1 < len(tokens):
+                    x = float(tokens[i])
+                    y = float(tokens[i + 1])
+                    if is_absolute:
+                        x = x * scale + offset_x
+                        y = y * scale + offset_y
+                    else:
+                        x = x * scale
+                        y = y * scale
+                    result.append(f'{x:.6f}')
+                    result.append(f'{y:.6f}')
+                    i += 2
+                else:
+                    result.append(token)
+                    i += 1
+
+            # Commands that take multiple x,y pairs (cubic bezier)
+            elif current_command.upper() == 'C':
+                # Three x,y pairs
+                if i + 5 < len(tokens):
+                    coords = []
+                    for j in range(6):
+                        coords.append(float(tokens[i + j]))
+
+                    if is_absolute:
+                        for j in range(0, 6, 2):
+                            coords[j] = coords[j] * scale + offset_x
+                            coords[j + 1] = coords[j + 1] * scale + offset_y
+                    else:
+                        for j in range(6):
+                            coords[j] = coords[j] * scale
+
+                    for coord in coords:
+                        result.append(f'{coord:.6f}')
+                    i += 6
+                else:
+                    result.append(token)
+                    i += 1
+
+            # Horizontal line (only x coordinate)
+            elif current_command.upper() == 'H':
+                x = float(tokens[i])
+                if is_absolute:
+                    x = x * scale + offset_x
+                else:
+                    x = x * scale
+                result.append(f'{x:.6f}')
+                i += 1
+
+            # Vertical line (only y coordinate)
+            elif current_command.upper() == 'V':
+                y = float(tokens[i])
+                if is_absolute:
+                    y = y * scale + offset_y
+                else:
+                    y = y * scale
+                result.append(f'{y:.6f}')
+                i += 1
+
+            # Z/z (close path - no coordinates)
+            elif current_command.upper() == 'Z':
+                i += 1
+
+            # For any other commands, just copy the number
+            else:
+                result.append(token)
+                i += 1
+
+    return ' '.join(result)
+
+
+def _add_svg_content(element, group, dwg, scale=1.0, offset_x=0.0, offset_y=0.0):
     """Recursively add SVG content from ElementTree to svgwrite group.
 
     Args:
         element: ElementTree element to extract content from
         group: svgwrite group to add content to
         dwg: svgwrite Drawing object
+        scale: Scale factor to apply to coordinates (default 1.0)
+        offset_x: X offset to add to coordinates (default 0.0)
+        offset_y: Y offset to add to coordinates (default 0.0)
     """
     # Get the tag name without namespace
     tag = element.tag.split('}')[-1] if '}' in element.tag else element.tag
@@ -99,21 +218,24 @@ def _add_svg_content(element, group, dwg):
         # But process children of svg and defs
         if tag in ('svg', 'defs'):
             for child in element:
-                _add_svg_content(child, group, dwg)
+                _add_svg_content(child, group, dwg, scale, offset_x, offset_y)
         return
 
     # Handle groups
     if tag == 'g':
         # Create a nested group
         sub_group = dwg.g()
-        # Copy attributes (filter out empty values)
+        # Copy attributes (filter out empty values and transform)
         for key, value in element.attrib.items():
             attr_name = key.split('}')[-1] if '}' in key else key
+            # Skip transforms - we're applying them to coordinates directly
+            if attr_name == 'transform':
+                continue
             if attr_name not in ('xmlns', 'xmlns:xlink') and not key.startswith('{') and value:
                 sub_group[attr_name] = value
         # Process children
         for child in element:
-            _add_svg_content(child, sub_group, dwg)
+            _add_svg_content(child, sub_group, dwg, scale, offset_x, offset_y)
         group.add(sub_group)
         return
 
@@ -122,13 +244,15 @@ def _add_svg_content(element, group, dwg):
         # Only add paths with valid 'd' attribute
         d_attr = element.get('d', '').strip()
         if d_attr:  # Only add if d attribute has content after stripping
-            # Create path with 'd' attribute
-            path_elem = dwg.path(d=d_attr)
+            # Transform the path data
+            transformed_d = _transform_path_data(d_attr, scale, offset_x, offset_y)
+            # Create path with transformed 'd' attribute
+            path_elem = dwg.path(d=transformed_d)
             # Copy other attributes
             for key, value in element.attrib.items():
                 attr_name = key.split('}')[-1] if '}' in key else key
-                # Skip 'd' (already set), xmlns, and empty values
-                if attr_name == 'd':
+                # Skip 'd' (already set), transform, xmlns, and empty values
+                if attr_name in ('d', 'transform'):
                     continue
                 value_stripped = value.strip() if isinstance(value, str) else value
                 if attr_name not in ('xmlns', 'xmlns:xlink') and not key.startswith('{') and value_stripped:
@@ -171,7 +295,7 @@ def _add_svg_content(element, group, dwg):
 
     # For any other elements, recursively process children
     for child in element:
-        _add_svg_content(child, group, dwg)
+        _add_svg_content(child, group, dwg, scale, offset_x, offset_y)
 
 
 def main():
